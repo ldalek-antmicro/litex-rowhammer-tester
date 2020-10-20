@@ -246,6 +246,63 @@ class BaseSoC(SoCCore):
         if args.sim:
             self.comb += platform.trace.eq(1)
 
+
+        if args.pattern and not args.bulk and args.ddrphy:
+            from litedram.frontend.bist import LiteDRAMBISTGenerator
+            self.submodules.generator = LiteDRAMBISTGenerator(self.sdram.crossbar.get_port())
+            self.add_csr("generator")
+
+            #from litedram.frontend.bist import _LiteDRAMBISTGenerator, _LiteDRAMBISTChecker
+            #make_generator = lambda: _LiteDRAMBISTGenerator(self.sdram.crossbar.get_port())
+            #generators = [make_generator()]
+            #self.submodules += generators
+            #bist_base   = 0x0000000
+            #bist_end    = 0x0100000
+            #bist_length = self.sdram.controller.interface.data_width // 8;
+            #def bist_config(module):
+            #    return [
+            #        module.base.eq(bist_base),
+            #        module.end.eq(bist_end),
+            #        module.length.eq(bist_length),
+            #        module.random_addr.eq(0),
+            #    ]
+
+            #assert bist_end > bist_base
+            #assert bist_end <= 2**(len(generators[0].end)) - 1, "End address outside of range"
+            #bist_addr_range = bist_end - bist_base
+            #assert bist_addr_range > 0 and bist_addr_range & (bist_addr_range - 1) == 0, \
+            #    "Length of the address range must be a power of 2"
+
+            #def combined_write(modules, signal):
+            #    sig = Signal()
+            #    self.comb += [getattr(m, signal).eq(sig) for m in modules]
+            #    return sig
+
+            #class LiteDRAMCoreControl(Module, AutoCSR):
+            #    def __init__(self):
+            #        self.init_done  = CSRStorage()
+            #        self.init_error = CSRStorage()
+            #self.submodules.ddrctrl = ddrctrl = LiteDRAMCoreControl()
+            #self.add_csr("ddrctrl")
+
+            #self.submodules.fsm = fsm = FSM(reset_state="WAIT-INIT")
+            #fsm.act("WAIT-INIT",
+            #    If(self.ddrctrl.init_done.storage,
+            #        NextState("WAIT-CLEAR")
+            #    )
+            #)
+            #fsm.act("WAIT-CLEAR",
+            #    If(self.ddrctrl.init_done.storage == 0,
+            #        NextState("BIST-GENERATOR")
+            #    )
+            #)
+            #fsm.act("BIST-GENERATOR",
+            #    combined_write(generators, "start").eq(1),
+            #    *map(bist_config, generators),
+            #    NextState("WAIT-INIT")
+            #)
+
+
         if args.bulk and args.ddrphy:
             from litedram.frontend.dma import LiteDRAMDMAReader, LiteDRAMDMAWriter
 
@@ -355,6 +412,7 @@ def main():
     parser.add_argument("--leds", action="store_true", help="TODO")
     parser.add_argument("--etherbone",  action="store_true", help="Enable Etherbone support")
     parser.add_argument("--bulk", action="store_true", help="TODO")
+    parser.add_argument("--pattern", action="store_true") # FIXME: rename as bist
 
     builder_args(parser)
     soc_core_args(parser)

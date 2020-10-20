@@ -20,7 +20,7 @@ all::
 		--ddrphy \
 		--etherbone \
 		--leds \
-		--bulk \
+		--pattern \
 		\
 		$(ARGS)
 
@@ -65,6 +65,10 @@ bulk:
 	sleep 0.2 && python3 bulk.py &
 	make --no-print-directory -C . srv || true
 
+bist:
+	sleep 0.2 && python3 bist.py $(ARGS) &
+	make --no-print-directory -C . srv || true
+
 clean::
 	rm -rf build csr.csv analyzer.csv sdram_init.py
 
@@ -84,3 +88,7 @@ verilator/image/bin/verilator: verilator/configure.ac
 xc3sprog/xc3sprog: xc3sprog/CMakeLists.txt
 	(cd xc3sprog && patch -Np1 < ../xc3sprog.patch && \
 		cmake . && make -j`nproc`)
+
+# ---------------- Tests ---------------------
+test_bulk:
+	python3 -m unittest -v tests/bulk.py
