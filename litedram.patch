@@ -1,0 +1,122 @@
+diff --git a/litedram/frontend/bist.py b/litedram/frontend/bist.py
+index 98d2014..bb547bc 100644
+--- a/litedram/frontend/bist.py
++++ b/litedram/frontend/bist.py
+@@ -283,6 +283,80 @@ class _LiteDRAMPatternGenerator(Module):
+             dma.sink.data.eq(data_port.dat_r),
+         ]
+ 
++@ResetInserter()
++class LiteDRAMExternalPatternGenerator(Module):
++    def __init__(self, dram_port, pattern_mem):
++        ashift, awidth = get_ashift_awidth(dram_port)
++        self.start  = Signal()
++        self.done   = Signal()
++        self.ticks  = Signal(32)
++
++        self.run_cascade_in  = Signal(reset=1)
++        self.run_cascade_out = Signal()
++
++        # # #
++
++        # Data / Address pattern -------------------------------------------------------------------
++        addr_init, data_init = zip(*init)
++        addr_mem = Memory(dram_port.address_width, len(addr_init), init=addr_init)
++        data_mem = Memory(dram_port.data_width,    len(data_init), init=data_init)
++        addr_port = addr_mem.get_port(async_read=True)
++        data_port = data_mem.get_port(async_read=True)
++        self.specials += addr_mem, data_mem, addr_port, data_port
++
++        # DMA --------------------------------------------------------------------------------------
++        dma = LiteDRAMDMAWriter(dram_port)
++        self.submodules += dma
++
++        cmd_counter = Signal(dram_port.address_width, reset_less=True)
++
++        # Data / Address FSM -----------------------------------------------------------------------
++        fsm = FSM(reset_state="IDLE")
++        self.submodules += fsm
++        fsm.act("IDLE",
++            If(self.start,
++                NextValue(cmd_counter, 0),
++                NextState("RUN")
++            ),
++            NextValue(self.ticks, 0)
++        )
++        fsm.act("WAIT",
++            If(self.run_cascade_in,
++                NextState("RUN")
++            )
++        )
++        fsm.act("RUN",
++            dma.sink.valid.eq(1),
++            If(dma.sink.ready,
++                self.run_cascade_out.eq(1),
++                NextValue(cmd_counter, cmd_counter + 1),
++                If(cmd_counter == (len(init) - 1),
++                    NextState("DONE")
++                ).Elif(~self.run_cascade_in,
++                    NextState("WAIT")
++                )
++            ),
++            NextValue(self.ticks, self.ticks + 1)
++        )
++        fsm.act("DONE",
++            self.run_cascade_out.eq(1),
++            self.done.eq(1)
++        )
++
++        if isinstance(dram_port, LiteDRAMNativePort): # addressing in dwords
++            dma_sink_addr = dma.sink.address
++        elif isinstance(dram_port, LiteDRAMAXIPort):  # addressing in bytes
++            dma_sink_addr = dma.sink.address[ashift:]
++        else:
++            raise NotImplementedError
++
++        self.comb += [
++            addr_port.adr.eq(cmd_counter),
++            dma_sink_addr.eq(addr_port.dat_r),
++            data_port.adr.eq(cmd_counter),
++            dma.sink.data.eq(data_port.dat_r),
++        ]
++
+ # LiteDRAMBISTGenerator ----------------------------------------------------------------------------
+ 
+ class LiteDRAMBISTGenerator(Module, AutoCSR):
+diff --git a/test/test_bist.py b/test/test_bist.py
+index 368119a..98242de 100644
+--- a/test/test_bist.py
++++ b/test/test_bist.py
+@@ -414,6 +414,32 @@ class TestBIST(MemoryTestDataMixin, unittest.TestCase):
+         ]
+         run_simulation(dut, generators)
+ 
++    def easy_test(self):
++        # Verify BIST (Generator and Checker) with control from CSRs.
++        class DUT(Module):
++            def __init__(self):
++                self.write_port = LiteDRAMNativeWritePort(address_width=32, data_width=32)
++                self.submodules.generator = LiteDRAMBISTGenerator(self.write_port)
++
++        def main_generator(dut, mem):
++            generator = GenCheckCSRDriver(dut.generator)
++            yield from generator.reset()
++            yield from generator.configure(base=0, end=16, length=100) # 25
++            yield from generator.run()
++
++        # DUT
++        dut = DUT()
++        mem = DRAMMemory(32, 48)
++
++        # Simulation
++        generators = [
++            main_generator(dut, mem),
++            mem.write_handler(dut.write_port),
++        ]
++        run_simulation(dut, generators)
++        print('\n')
++        mem.show_content()
++
+     def test_bist_csr_cdc(self):
+ 	    # Verify BIST (Generator and Checker) with control from CSRs in a different clock domain.
+         class DUT(Module):

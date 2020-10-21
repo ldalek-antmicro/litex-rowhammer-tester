@@ -249,25 +249,6 @@ class BaseSoC(SoCCore):
         if args.bulk and args.ddrphy:
             from litedram.frontend.dma import LiteDRAMDMAReader, LiteDRAMDMAWriter
 
-            #self.submodules.dram_dma = LiteDRAMDMAReader(port)
-
-            # j removethis boczar at antmicro dot com
-            #class RowHammerDMA(Module, AutoCSR):
-            #    def __init__(self, dma, bankbits, colbits):
-            #        self.enabled = CSRStorage()
-
-            #        shift = (colbits + bankbits)
-            #        address = [(1 << shift), (2 << shift)]
-
-            #        cnt = Signal()
-            #        self.sync += If(dma.sink.ready, cnt.eq(cnt + 1))
-
-            #        self.comb += [
-            #            dma.sink.address.eq(Array(address)[cnt]),
-            #            dma.sink.valid.eq(self.enabled.storage),
-            #            dma.source.ready.eq(1),
-            #        ]
-
             class BulkWrite(Module, AutoCSR):
                 def __init__(self, dma, bankbits, colbits):
                     self.enabled  = CSRStorage()
@@ -334,6 +315,17 @@ class BaseSoC(SoCCore):
                                                      colbits=self.sdram.controller.settings.geom.colbits)
             self.add_csr("bulk_rd")
 
+        if args.bist and args.ddrphy:
+            from litedram.frontend.bist import LiteDRAMBISTGenerator, LiteDRAMBISTChecker
+
+            # FIXME: lfsr writes 0x0 as first word
+            self.write_port = self.sdram.crossbar.get_port(data_width=32)
+            self.submodules.generator = LiteDRAMBISTGenerator(self.write_port)
+            self.add_csr("generator")
+
+            self.read_port = self.sdram.crossbar.get_port(data_width=32)
+            self.submodules.checker = LiteDRAMBISTChecker(self.read_port)
+            self.add_csr("checker")
 
 
     def generate_sdram_phy_py_header(self):
@@ -355,6 +347,7 @@ def main():
     parser.add_argument("--leds", action="store_true", help="TODO")
     parser.add_argument("--etherbone",  action="store_true", help="Enable Etherbone support")
     parser.add_argument("--bulk", action="store_true", help="TODO")
+    parser.add_argument("--bist", action="store_true", help="TODO")
 
     builder_args(parser)
     soc_core_args(parser)
